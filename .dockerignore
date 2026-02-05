@@ -1,0 +1,56 @@
+# Docker 构建时忽略的文件和目录
+# 减小镜像体积，加快构建速度
+
+# Git
+.git
+.gitignore
+
+# Python 缓存
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# 虚拟环境
+venv/
+.venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 测试和开发文件
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+
+# 文档
+docs/
+*.md
+!README.md
+
+# 日志（容器内会重新创建）
+logs/
+*.log
+
+# 环境变量文件（通过 volume 挂载）
+.env
+.env.local
+.env.*.local
+
+# 其他
+.DS_Store
+Thumbs.db
+*.bak
+*.tmp
