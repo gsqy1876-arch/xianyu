@@ -14,8 +14,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # 安装系统依赖
-# - nodejs/npm: PyExecJS 解密工具需要
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# 更换 APT 为清华源以便在国内环境快速构建
+RUN sed -i 's/deb.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list && \
+    sed -i 's/security.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list && \
+    apt-get update && apt-get install -y --no-install-recommends \
     nodejs \
     npm \
     curl \
@@ -26,8 +28,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # 复制依赖文件
 COPY requirements.txt .
 
-# 安装 Python 包（排除 Playwright）
-RUN pip install --no-cache-dir \
+# 安装 Python 包（使用清华源，排除 Playwright）
+RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple \
     requests==2.31.0 \
     loguru==0.7.2 \
     websockets==12.0 \
