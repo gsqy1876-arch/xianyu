@@ -674,51 +674,91 @@ class XianyuLive:
 
     async def main(self):
         """主程序入口"""
+        retry_count = 0
+        max_reconnect_delay = 60
+        initial_reconnect_delay = 5
+        
         try:
-            await self.create_session()  # 创建session
+            await self.create_session()  # 创建 session
             while True:
                 try:
                     headers = WEBSOCKET_HEADERS.copy()
                     headers['Cookie'] = self.cookies_str
                     
+                    logger.info(f"正在建立 WebSocket 连接 (第 {retry_count + 1} 次尝试)...")
                     async with websockets.connect(
                         self.base_url,
-                        extra_headers=headers
+                        extra_headers=headers,
+                        ping_interval=25,     # 原生 ping 间隔，略微增加
+                        ping_timeout=20,      # 原生 ping 超时，增加到 20s 给网络波动留余地
+                        close_timeout=10,     # 关闭超时，增加到 10s
+                        max_size=None         # 不限制消息大小，防止大消息导致断连
                     ) as websocket:
                         self.ws = websocket
                         await self.init(websocket)
+                        
+                        # 重置重试计数器
+                        retry_count = 0
+                        logger.info("WebSocket 连接已建立并完成注册")
 
                         # 启动心跳任务
                         self.heartbeat_task = asyncio.create_task(self.heartbeat_loop(websocket))
                         
-                        # 启动token刷新任务（已禁用）
+                        # 启动 token 刷新任务（如果需要可以取消注释）
                         # self.token_refresh_task = asyncio.create_task(self.token_refresh_loop())
 
-                        async for message in websocket:
-                            try:
-                                message_data = json.loads(message)
-                                
-                                # 处理心跳响应
-                                if await self.handle_heartbeat_response(message_data):
-                                    continue
+                        try:
+                            async for message in websocket:
+                                try:
+                                    message_data = json.loads(message)
                                     
-                                # 处理其他消息
-                                await self.handle_message(message_data, websocket)
-                                
-                            except Exception as e:
-                                logger.error(f"处理消息出错: {e}")
-                                continue
+                                    # 处理心跳响应
+                                    if await self.handle_heartbeat_response(message_data):
+                                        continue
+                                        
+                                    # 处理其他消息
+                                    await self.handle_message(message_data, websocket)
+                                    
+                                except json.JSONDecodeError:
+                                    logger.warning(f"接收到非 JSON 格式消息: {message[:100]}")
+                                except Exception as e:
+                                    logger.error(f"处理消息出错: {e}")
+                                    continue
+                        except websockets.exceptions.ConnectionClosed as e:
+                            logger.warning(f"WebSocket 消息循环连接关闭: {e.code} {e.reason}")
+                        except Exception as e:
+                            logger.error(f"WebSocket 消息循环发生意外错误: {e}")
+                        finally:
+                            # 确保内部循环退出时取消关联任务
+                            if self.heartbeat_task:
+                                self.heartbeat_task.cancel()
+                                self.heartbeat_task = None
 
-                except Exception as e:
-                    logger.error(f"WebSocket连接异常: {e}")
+                except (websockets.exceptions.ConnectionClosed, ConnectionRefusedError, OSError) as e:
+                    retry_count += 1
+                    delay = min(initial_reconnect_delay * (2 ** (retry_count - 1)), max_reconnect_delay)
+                    logger.error(f"WebSocket 连接失败/中断: {type(e).__name__} - {e}")
+                    
+                    # 连接异常时，重置 Token 以便下次重连时强制刷新
+                    self.current_token = None
+                    logger.info(f"由于连接异常，已重置 Token。{delay} 秒后尝试重新连接并刷新 Token...")
+                    
+                    # 确保清理 旧任务
                     if self.heartbeat_task:
                         self.heartbeat_task.cancel()
-                    if self.token_refresh_task:
-                        self.token_refresh_task.cancel()
-                    await asyncio.sleep(5)  # 等待5秒后重试
+                        self.heartbeat_task = None
+                        
+                    await asyncio.sleep(delay)
                     continue
+                except Exception as e:
+                    logger.exception(f"发生未捕获的严重错误: {e}")
+                    await asyncio.sleep(5)
+                    continue
+
         finally:
-            await self.close_session()  # 确保关闭session
+            await self.close_session()  # 确保关闭 session
+            if self.heartbeat_task:
+                self.heartbeat_task.cancel()
 
 if __name__ == '__main__':
     cookies_str = os.getenv('COOKIES_STR')
