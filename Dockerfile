@@ -29,6 +29,8 @@ RUN if [ -f /etc/apt/sources.list ]; then \
     npm \
     curl \
     ca-certificates \
+    build-essential \
+    python3-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -36,15 +38,10 @@ RUN if [ -f /etc/apt/sources.list ]; then \
 COPY requirements.txt .
 
 # 安装 Python 包（使用清华源，排除 Playwright）
-RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple \
-    requests==2.31.0 \
-    loguru==0.7.2 \
-    websockets==12.0 \
-    pyyaml==6.0.1 \
-    aiohttp==3.9.1 \
-    blackboxprotobuf==1.1.0 \
-    PyExecJS==1.5.1 \
-    python-dotenv==1.0.0
+# 增加 --trusted-host 以防证书问题，并先升级 pip
+RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn pip -U && \
+    grep -v "playwright" requirements.txt > requirements_prod.txt && \
+    pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn -r requirements_prod.txt
 
 # 复制项目代码
 COPY . .
